@@ -128,7 +128,9 @@ void MOOV_Manager::ParseNestedBoxes ( BoxNode * parentNode, const std::string & 
 	
 	parentNode->contentSize = 0;	// Exclude nested box size.
 
-	if ( parentNode->boxType == ISOMedia::k_meta && parentPath != "moov/meta") {	// ! The 'meta' box is a FullBox.
+	// ! The ISO 'meta' box is a FullBox. A QuickTime 'meta' atom has no version/flags and starts with its 'hdlr' atom.
+	bool isQuickTimeMeta = ((childLimit - childOrigin) >= 8) && (GetUns32BE ( childOrigin + 4 ) == ISOMedia::k_hdlr);
+	if ( parentNode->boxType == ISOMedia::k_meta && parentPath != "moov/meta" && ! isQuickTimeMeta ) {
 		parentNode->contentSize = 4;
 		childOrigin += 4;
 	}
