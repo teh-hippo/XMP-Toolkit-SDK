@@ -1,0 +1,49 @@
+name: Linux build
+
+on:
+  push:
+    branches: [ci-linux-build]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    env:
+      # build/CMakeLists.txt requires CMake 2.8.6, which CMake 4 rejects without this.
+      CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+    steps:
+      - name: Check out
+        run: |
+          git init -q .
+          git fetch -q --depth 1 "https://github.com/${GITHUB_REPOSITORY}.git" "${GITHUB_SHA}"
+          git checkout -q FETCH_HEAD
+
+      - name: Fetch Expat 2.5.0 and zlib 1.2.13
+        run: |
+          git clone -q --depth 1 --branch R_2_5_0 https://github.com/libexpat/libexpat.git "$RUNNER_TEMP/libexpat"
+          cp -r "$RUNNER_TEMP/libexpat/expat/lib" third-party/expat/
+          git clone -q --depth 1 --branch v1.2.13 https://github.com/madler/zlib.git "$RUNNER_TEMP/zlib"
+          cp "$RUNNER_TEMP"/zlib/*.c "$RUNNER_TEMP"/zlib/*.h third-party/zlib/
+
+      - name: Build StaticRelease64 and StaticDebug64
+        run: |
+          gcc --version | head -1
+          cmake --version | head -1
+          cd build
+          make StaticRelease64
+          make StaticDebug64
+          cd ..
+          # The Makefile skips these targets silently unless getconf LONG_BIT is 64.
+          ls -l public/libraries/i80386linux_x64/release/staticXMPCore.ar public/libraries/i80386linux_x64/release/staticXMPFiles.ar \
+            public/libraries/i80386linux_x64/debug/staticXMPCore.ar public/libraries/i80386linux_x64/debug/staticXMPFiles.ar
+
+      - name: Run the repro from adobe/XMP-Toolkit-SDK#123
+        run: |
+          lib="$PWD/public/libraries/i80386linux_x64/release"
+          g++ -std=c++11 -DUNIX_ENV=1 -DXMP_StaticBuild=1 -DNDEBUG=1 -funsigned-char -I"$PWD/public/include" .github/ci/repro.cpp \
+            "$lib/staticXMPCore.ar" "$lib/staticXMPFiles.ar" -lpthread -ldl -o "$RUNNER_TEMP/repro"
+          cd "$RUNNER_TEMP"
+          ./repro | tee repro.txt
+          grep -q '^after:  00 00 00 42 6d 65 74 61 00 00 00 22 68 64 6c 72 ' repro.txt
